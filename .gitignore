@@ -1,0 +1,4 @@
+__pycache__/
+*.py[cod]
+*.sqlite3
+application-completion-intelligence-platform/backend/uploads/

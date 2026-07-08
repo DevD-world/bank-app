@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: banking
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python backend/server.py
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: COMPLETION_IQ_DATA_DIR
+        value: /var/data
+      - key: COMPLETION_IQ_DB_PATH
+        value: /var/data/completion_iq.sqlite3
+      - key: COMPLETION_IQ_UPLOAD_DIR
+        value: /var/data/uploads
+      - key: COMPLETION_IQ_ALLOWED_ORIGIN
+        value: "*"
+      - key: COMPLETION_IQ_MAX_PAYLOAD_BYTES
+        value: "10485760"
+      - key: COMPLETION_IQ_OCR_WORKERS
+        value: "8"
+      - key: COMPLETION_IQ_OCR_TIMEOUT_SECONDS
+        value: "45"
+      - key: COMPLETION_IQ_API_KEY
+        sync: false
+    disk:
+      name: banking-data
+      mountPath: /var/data
+      sizeGB: 1
