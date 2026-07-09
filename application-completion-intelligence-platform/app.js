@@ -907,7 +907,7 @@ function updateUploadPreview() {
   autoReadFileInto(file, document.getElementById("documentText"), label);
 }
 
-function renderScanResult(app, docType, fields, confidence, result, reviewQueue = state.reviewQueue, identity = verifyIdentity(docType, fields)) {
+function renderScanResult(app, docType, fields, confidence, result, reviewQueue = state.reviewQueue, identity = verifyIdentity(docType, fields), ocr = {}) {
   const attached = result === "attached";
   const resultBox = document.getElementById("scanResult");
   resultBox.classList.remove("empty-state");
@@ -925,9 +925,11 @@ function renderScanResult(app, docType, fields, confidence, result, reviewQueue 
       <div class="detail-item"><span>Aadhaar</span><strong>${fields.aadhaar}</strong></div>
       <div class="detail-item"><span>Name</span><strong>${fields.name || "Not detected"}</strong></div>
       <div class="detail-item"><span>Identity</span><strong>${identity.status}</strong></div>
+      <div class="detail-item"><span>OCR Pass</span><strong>${ocr.orientationAttempt || ocr.status || "Text input"}</strong></div>
       <div class="detail-item"><span>New Completion</span><strong>${completionScore(app)}%</strong></div>
       <div class="detail-item"><span>Backend</span><strong>${backendOnline ? "SQLite API" : "Browser fallback"}</strong></div>
     </div>
+    ${ocr.topAttempts?.length ? `<h3>OCR Enhancement</h3><div class="compact-row">${ocr.topAttempts.map((item) => `${item.label}: ${item.chars} chars`).join(" | ")}</div>` : ""}
     <h3>Manual Review Queue</h3>
     <div class="compact-list">${reviewQueue.slice(0, 5).map((item) => `
       <div class="compact-row task-row">
@@ -1143,7 +1145,7 @@ async function scanDocument() {
       selectedApplicationId = app.id;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       renderAll();
-      renderScanResult(findApp(app.id), payload.docType, payload.fields, payload.confidence, payload.result, state.reviewQueue, payload.identity);
+      renderScanResult(findApp(app.id), payload.docType, payload.fields, payload.confidence, payload.result, state.reviewQueue, payload.identity, payload.ocr);
       return;
     } catch {
       backendOnline = false;

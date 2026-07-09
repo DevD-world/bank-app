@@ -1367,6 +1367,8 @@ function renderScanPayload(payload, app) {
       <div class="detail-item"><span>Completion</span><strong>${completionScore(app)}%</strong></div>
     </div>
     ${payload.preprocess?.steps?.length ? `<strong>Image Processing</strong><span>${payload.preprocess.steps.join(", ")}</span>` : ""}
+    ${payload.ocr?.preprocessSteps?.length ? `<strong>OCR Enhancement</strong><span>${payload.ocr.preprocessSteps.join(", ")}</span>` : ""}
+    ${payload.ocr?.topAttempts?.length ? `<strong>Best OCR Passes</strong><span>${payload.ocr.topAttempts.map((item) => `${item.label}: ${item.chars} chars`).join(" | ")}</span>` : ""}
     ${payload.ai?.missingFields?.length ? `<span>Missing fields: ${payload.ai.missingFields.join(", ")}</span>` : ""}
     ${payload.crossVerification ? `<strong>Cross Verification: ${payload.crossVerification.overall}</strong><span>${escapeHtml(payload.crossVerification.summary)}</span>` : ""}
     ${payload.identityConsistency?.status === "Blocked" ? `<strong>Identity Cross-Check Blocked</strong><span>${escapeHtml(payload.identityConsistency.mismatches?.[0]?.message || "Document identity evidence does not match.")}</span>` : ""}

@@ -162,7 +162,7 @@ KYC_PROFILE_INDEX = {
     },
 }
 
-SCAN_CACHE_VERSION = "world-graph-v1"
+SCAN_CACHE_VERSION = "world-graph-v2-ocr-enhanced"
 MAX_JSON_PAYLOAD_BYTES = int(os.environ.get("COMPLETION_IQ_MAX_PAYLOAD_BYTES", str(5 * 1024 * 1024)))
 OCR_WORKERS = int(os.environ.get("COMPLETION_IQ_OCR_WORKERS", "32"))
 OCR_TIMEOUT_SECONDS = int(os.environ.get("COMPLETION_IQ_OCR_TIMEOUT_SECONDS", "30"))
@@ -865,6 +865,15 @@ def document_quality_assessment(filename: str, source: str, ocr_info: dict, ai: 
     if ocr_info.get("status", "").lower().endswith("failed"):
         score -= 40
         issues.append("OCR failed")
+    if ocr_info.get("status") == "OCR empty":
+        score -= 35
+        issues.append("OCR could not read enhanced scan")
+    if ocr_info.get("attempts", 0) >= 20 and text_len < 60:
+        score -= 18
+        issues.append("Dust/blur enhancement found limited readable text")
+    if ocr_info.get("score", 100) and ocr_info.get("score", 100) < 80 and text_len < 80:
+        score -= 12
+        issues.append("Low OCR confidence after enhancement")
 
     score = max(0, min(100, score))
     if score >= 82:
@@ -2089,6 +2098,102 @@ def upload_profile_from_data_url(file_data: str, filename: str = "") -> dict:
     }
 
 
+def ocr_candidate_score(text: str) -> int:
+    clean = re.sub(r"\s+", " ", text or "").strip()
+    score = min(len(clean), 450)
+    strong_patterns = (
+        r"\b[0-9]{4}\s?[0-9]{4}\s?[0-9]{4}\b",
+        r"\b[A-Z]{5}[0-9]{4}[A-Z]\b",
+        r"\b[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]\b",
+    )
+    for pattern in strong_patterns:
+        if re.search(pattern, clean, re.I):
+            score += 120
+    keyword_groups = (
+        r"\b(?:dob|date of birth|birth|male|female|mobile|address)\b",
+        r"\b(?:name|father|income tax|government of india|aadhaar|aadhar|permanent account|unique identification)\b",
+        r"\b(?:gst|gstin|statement|registration|signature|bank)\b",
+    )
+    for pattern in keyword_groups:
+        if re.search(pattern, clean, re.I):
+            score += 55
+    alpha_ratio = len(re.findall(r"[A-Za-z0-9]", clean)) / max(1, len(clean))
+    if alpha_ratio < 0.35 and len(clean) > 20:
+        score -= 80
+    return score
+
+
+def save_ocr_variant(image, label: str, candidates: list[tuple[Path, str]]) -> None:
+    safe_label = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")[:28] or "variant"
+    variant_path = UPLOAD_DIR / f"{uuid.uuid4().hex}-{safe_label}.png"
+    image.save(variant_path, format="PNG", optimize=True)
+    candidates.append((variant_path, label))
+
+
+def build_ocr_image_candidates(image_path: Path) -> tuple[list[tuple[Path, str]], list[str]]:
+    candidates = [(image_path, "original")]
+    steps = ["Original scan"]
+    try:
+        from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+        with Image.open(image_path) as img:
+            base = ImageOps.exif_transpose(img).convert("RGB")
+            rotations = [
+                (base, "upright"),
+                (base.rotate(90, expand=True), "rotate-90"),
+                (base.rotate(180, expand=True), "rotate-180"),
+                (base.rotate(270, expand=True), "rotate-270"),
+            ]
+            for rotated, label in rotations:
+                longest = max(rotated.size)
+                scale = 1
+                if longest < 2200:
+                    scale = 2200 / max(1, longest)
+                elif longest > 3200:
+                    scale = 3200 / max(1, longest)
+                if scale != 1:
+                    rotated = rotated.resize(
+                        (round(rotated.width * scale), round(rotated.height * scale)),
+                        Image.Resampling.LANCZOS,
+                    )
+
+                gray = ImageOps.grayscale(rotated)
+                autocontrast = ImageOps.autocontrast(gray, cutoff=1)
+                denoised = autocontrast.filter(ImageFilter.MedianFilter(size=3))
+                sharpened = denoised.filter(ImageFilter.UnsharpMask(radius=1.4, percent=180, threshold=3))
+                high_contrast = ImageEnhance.Contrast(sharpened).enhance(2.0)
+                bright = ImageEnhance.Brightness(high_contrast).enhance(1.08)
+                binary_soft = bright.point(lambda pixel: 255 if pixel > 142 else 0)
+                binary_hard = bright.point(lambda pixel: 255 if pixel > 172 else 0)
+                inverted = ImageOps.invert(binary_soft)
+                edge_safe = ImageOps.expand(binary_soft, border=42, fill=255)
+                variants = [
+                    (rotated, f"{label} color-resized"),
+                    (autocontrast, f"{label} grayscale-autocontrast"),
+                    (denoised, f"{label} dust-denoise"),
+                    (sharpened, f"{label} unsharp-mask"),
+                    (bright, f"{label} contrast-brightness"),
+                    (binary_soft, f"{label} adaptive-threshold-soft"),
+                    (binary_hard, f"{label} adaptive-threshold-hard"),
+                    (edge_safe, f"{label} threshold-white-border"),
+                    (inverted, f"{label} inverted-threshold"),
+                ]
+                for variant, variant_label in variants:
+                    save_ocr_variant(variant, variant_label, candidates)
+            steps.extend([
+                "EXIF orientation normalized",
+                "4 rotations tested",
+                "Upscale/downscale to OCR-safe size",
+                "Grayscale autocontrast",
+                "Median denoise for dust",
+                "Unsharp mask for blur",
+                "Soft/hard thresholding",
+                "Inverted threshold fallback",
+            ])
+    except Exception as exc:
+        steps.append(f"Enhanced preprocessing unavailable: {exc}")
+    return candidates, steps
+
+
 def ocr_image_from_payload(payload: dict) -> tuple[str, dict]:
     data_url = payload.get("fileData") or ""
     if not data_url:
@@ -2103,74 +2208,41 @@ def ocr_image_from_payload(payload: dict) -> tuple[str, dict]:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     image_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
     image_path.write_bytes(raw)
-    candidates = [(image_path, "original")]
-    try:
-        from PIL import Image, ImageEnhance, ImageFilter, ImageOps
-        with Image.open(image_path) as img:
-            base = ImageOps.exif_transpose(img).convert("RGB")
-            variants = [
-                (base, "exif-normalized"),
-                (base.rotate(90, expand=True), "rotated 90"),
-                (base.rotate(180, expand=True), "rotated 180"),
-                (base.rotate(270, expand=True), "rotated 270"),
-            ]
-            for variant, label in variants:
-                longest = max(variant.size)
-                if longest < 1800:
-                    scale = 1800 / max(1, longest)
-                    variant = variant.resize((round(variant.width * scale), round(variant.height * scale)))
-                gray = ImageOps.grayscale(variant)
-                enhanced_variants = [
-                    (ImageEnhance.Contrast(variant).enhance(1.45), f"{label} contrast"),
-                    (ImageOps.autocontrast(gray).filter(ImageFilter.SHARPEN), f"{label} grayscale sharpen"),
-                    (ImageEnhance.Contrast(ImageOps.autocontrast(gray)).enhance(2.2), f"{label} high contrast grayscale"),
-                    (ImageOps.autocontrast(gray).point(lambda pixel: 255 if pixel > 150 else 0), f"{label} threshold"),
-                ]
-                for enhanced, enhanced_label in enhanced_variants:
-                    variant_path = UPLOAD_DIR / f"{uuid.uuid4().hex}.png"
-                    enhanced.save(variant_path)
-                    candidates.append((variant_path, enhanced_label))
-    except Exception:
-        pass
+    candidates, preprocess_steps = build_ocr_image_candidates(image_path)
 
     best_text = ""
     best_label = "original"
     best_info = {"status": "OCR empty", "message": "OCR did not detect readable text."}
+    best_score = -1
+    attempted = []
     for candidate_path, label in candidates:
         text, info = run_windows_ocr(candidate_path)
-        score = len(text.strip())
-        if re.search(r"\b[0-9]{4}\s?[0-9]{4}\s?[0-9]{4}\b", text):
-            score += 80
-        if re.search(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b", text, re.I):
-            score += 80
-        if re.search(r"\b(?:dob|date of birth|male|female|mobile)\b", text, re.I):
-            score += 40
-        if re.search(r"\b(?:name|father|income tax|government of india|aadhaar|aadhar|permanent account)\b", text, re.I):
-            score += 35
-        best_score = len(best_text.strip())
-        if re.search(r"\b[0-9]{4}\s?[0-9]{4}\s?[0-9]{4}\b", best_text):
-            best_score += 80
-        if re.search(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b", best_text, re.I):
-            best_score += 80
-        if re.search(r"\b(?:dob|date of birth|male|female|mobile)\b", best_text, re.I):
-            best_score += 40
-        if re.search(r"\b(?:name|father|income tax|government of india|aadhaar|aadhar|permanent account)\b", best_text, re.I):
-            best_score += 35
+        score = ocr_candidate_score(text)
+        attempted.append({"label": label, "score": score, "chars": len(text.strip()), "status": info.get("status", "")})
         if score > best_score:
             best_text = text
             best_label = label
             best_info = info
+            best_score = score
+        if score >= 300 and len(text.strip()) >= 40:
+            break
     if best_text.strip():
         return best_text, {
             "status": best_info.get("status", "OCR extracted"),
-            "message": f"Windows OCR read the uploaded image using auto-rotation/enhancement ({best_label}).",
+            "message": f"Windows OCR read the uploaded image using blur/dust enhancement ({best_label}).",
             "orientationAttempt": best_label,
             "attempts": len(candidates),
+            "score": best_score,
+            "preprocessSteps": preprocess_steps,
+            "topAttempts": sorted(attempted, key=lambda item: item["score"], reverse=True)[:5],
         }
     return "", {
         "status": "OCR empty",
-        "message": f"OCR tried {len(candidates)} orientation/enhancement pass(es), but no readable text was detected. Capture the card flatter and closer.",
+        "message": f"OCR tried {len(candidates)} blur/dust enhancement pass(es), but no readable text was detected. Capture the card flatter, closer, and under stronger light.",
         "attempts": len(candidates),
+        "score": 0,
+        "preprocessSteps": preprocess_steps,
+        "topAttempts": sorted(attempted, key=lambda item: item["score"], reverse=True)[:5],
     }
 
 
