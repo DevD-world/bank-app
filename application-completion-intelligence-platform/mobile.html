@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0e503d" />
-    <title>Completion IQ Mobile</title>
+    <meta name="theme-color" content="#09253d" />
+    <title>Bharat Bank RM Workspace</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="stylesheet" href="./mobile.css" />
   </head>
@@ -12,15 +12,22 @@
     <main class="mobile-app">
       <header class="mobile-header">
         <div>
-          <span class="eyebrow">Completion IQ</span>
+          <span class="eyebrow">Bharat Bank</span>
           <h1 id="mobileTitle">RM Workspace</h1>
         </div>
         <span id="syncBadge" class="status-pill">Syncing</span>
       </header>
 
       <section id="screen-home" class="screen active">
-        <section class="detail-block compact">
-          <h2>Demo Controls</h2>
+        <section class="bank-hero">
+          <div>
+            <span class="eyebrow">Today</span>
+            <h2>Application Desk</h2>
+            <p>Review priority accounts, collect missing documents, and move complete cases to approval.</p>
+          </div>
+        </section>
+        <details class="detail-block compact admin-tools">
+          <summary>Workspace Settings</summary>
           <label class="field">
             Role
             <select id="roleSelect">
@@ -34,11 +41,11 @@
             <button id="pitchModeBtn" class="mini-btn" type="button">Pitch Mode</button>
             <button id="resetDemoBtn" class="mini-btn danger-btn" type="button">Reset Demo</button>
           </div>
-        </section>
+        </details>
         <div class="metric-strip" id="mobileMetrics"></div>
         <div id="roleHomePanel"></div>
         <div id="mobileNotifications"></div>
-        <button id="newApplicantBtn" class="primary-btn add-applicant-btn" type="button">+ Add New Applicant</button>
+        <button id="newApplicantBtn" class="primary-btn add-applicant-btn" type="button">New Applicant</button>
         <label class="search-box">
           <input id="mobileSearch" type="search" placeholder="Search applicant, product, RM..." />
         </label>

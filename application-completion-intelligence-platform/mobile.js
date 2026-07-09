@@ -609,15 +609,15 @@ function showScreen(name) {
   document.getElementById("mobileTitle").textContent = {
     home: {
       rm: "RM Workspace",
-      manager: "Manager Tower",
-      admin: "Admin & Policy",
-      customer: "Customer Tracking",
+      manager: "Branch Review",
+      admin: "Admin Controls",
+      customer: "Application Status",
     }[state.user?.role || "rm"],
     detail: "Applicant",
     new: "New Applicant",
     tasks: "Today's Work",
     scan: "Quick Scan",
-    insights: "Control Tower",
+    insights: "Branch Overview",
     copilot: "RM Copilot",
     pitch: "Pitch Mode"
   }[name];
@@ -647,10 +647,10 @@ function renderMetrics() {
   const high = visibleApps.filter((app) => riskScore(app) >= 70).length;
   const avg = Math.round(visibleApps.reduce((sum, app) => sum + completionScore(app), 0) / Math.max(1, visibleApps.length));
   const labels = {
-    rm: [["My Active", active], ["My High Risk", high], ["Avg Done", `${avg}%`]],
-    manager: [["Branch Active", active], ["High Risk", high], ["Review Queue", (state.reviewQueue || []).length]],
+    rm: [["Active", active], ["High Risk", high], ["Complete", `${avg}%`]],
+    manager: [["Branch", active], ["High Risk", high], ["Reviews", (state.reviewQueue || []).length]],
     admin: [["Products", Object.keys(state.rules || {}).length], ["Rules", Object.values(state.rules || {}).flat().length], ["Audit Items", (state.notifications || []).length]],
-    customer: [["Applications", visibleApps.length], ["In Progress", active], ["Avg Done", `${avg}%`]],
+    customer: [["Cases", visibleApps.length], ["Open", active], ["Complete", `${avg}%`]],
   }[role] || [["Active", active], ["High Risk", high], ["Avg Done", `${avg}%`]];
   document.getElementById("mobileMetrics").innerHTML = labels.map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`).join("");
 }
@@ -669,23 +669,23 @@ function renderRoleHomePanel() {
   const panels = {
     rm: `
       <section class="detail-block compact">
-        <h2>RM Operating Queue</h2>
-        <p>Focus on document gaps and applications ready for bank submission.</p>
+        <h2>Priority Queue</h2>
+        <p>Start with high-risk applications, then clear pending documents.</p>
         <div class="quick-actions">
-          <button class="mini-btn" data-screen-shortcut="scan">Scan Documents</button>
-          <button class="mini-btn" data-screen-shortcut="tasks">Today's Work</button>
+          <button class="mini-btn" data-screen-shortcut="scan">Scan</button>
+          <button class="mini-btn" data-screen-shortcut="tasks">Tasks</button>
         </div>
       </section>`,
     manager: `
       <section class="detail-block compact">
-        <h2>Manager Control Tower</h2>
-        <p>Branch bottlenecks, overloaded RMs, and review queue items.</p>
-        <button class="primary-btn" data-screen-shortcut="insights" type="button">Open Control Tower</button>
+        <h2>Branch Overview</h2>
+        <p>Review bottlenecks, pending approvals, and RM workload.</p>
+        <button class="primary-btn" data-screen-shortcut="insights" type="button">Open Overview</button>
       </section>`,
     admin: `
       <section class="detail-block compact">
-        <h2>World Graph & Policy</h2>
-        <p>Company memory plus operating physics for agent planning.</p>
+        <h2>Admin Controls</h2>
+        <p>Manage policy rules, compliance checks, and audit readiness.</p>
         <div class="detail-grid">
           <div class="detail-item"><span>Graph Nodes</span><strong>${graphSummary.nodes}</strong></div>
           <div class="detail-item"><span>Dynamics</span><strong>${graphSummary.dynamics}</strong></div>
@@ -693,14 +693,14 @@ function renderRoleHomePanel() {
           <div class="detail-item"><span>RBI Adapter</span><strong>Ready</strong></div>
         </div>
         <div class="quick-actions">
-          <button class="mini-btn" data-screen-shortcut="insights">Open Graph</button>
+          <button class="mini-btn" data-screen-shortcut="insights">Open Controls</button>
           <a class="mini-link" href="https://www.rbi.org.in/commonman/english/scripts/notification.aspx?id=2607" target="_blank" rel="noopener">RBI Link</a>
         </div>
       </section>`,
     customer: `
       <section class="detail-block compact">
-        <h2>Customer Tracking View</h2>
-        <p>Customer mode is read-only. It shows status, pending documents, and tracking links without exposing staff workflow controls.</p>
+        <h2>Application Status</h2>
+        <p>Track submitted cases and pending document requests.</p>
       </section>`,
   };
   node.innerHTML = panels[role] || panels.rm;
@@ -767,8 +767,8 @@ function renderApplicationList() {
     document.getElementById("mobileApplicationList").innerHTML = `
       <section class="detail-block compact">
         <h2>Admin Workspace</h2>
-        <p>Use Insights for world graph, RBI/Bharat Bank policy, rule builder, audit, and compliance controls.</p>
-        <button class="primary-btn" data-screen-shortcut="insights" type="button">Open Admin Control Center</button>
+        <p>Use Insights for policy rules, audit checks, and compliance controls.</p>
+        <button class="primary-btn" data-screen-shortcut="insights" type="button">Open Controls</button>
       </section>
     `;
     document.querySelectorAll("[data-screen-shortcut]").forEach((button) => button.addEventListener("click", () => showScreen(button.dataset.screenShortcut)));
@@ -781,9 +781,9 @@ function renderApplicationList() {
     apps = state.applications.slice(0, 4);
   }
   const heading = {
-    rm: "My Priority Applications",
-    manager: "Applications Needing Manager Attention",
-    customer: "My Tracking Tickets",
+    rm: "Priority Applications",
+    manager: "Manager Review",
+    customer: "Tracking Tickets",
   }[role] || "Applications";
   document.getElementById("mobileApplicationList").innerHTML = `
     <section class="detail-block compact">
@@ -808,10 +808,9 @@ function renderApplicationList() {
           <span>${app.rm}</span>
         </div>
         <div class="card-actions">
-          <button class="mini-btn" data-open-app="${app.id}" type="button">Open</button>
+          <button class="mini-btn" data-open-app="${app.id}" type="button">Review</button>
           ${role === "customer" ? `<a class="mini-link" href="./customer.html?ticket=${encodeURIComponent(app.trackingTicket || "")}" target="_blank" rel="noopener">Track</a>` : `
             <button class="mini-btn" data-edit-app="${app.id}" type="button">Edit</button>
-            <button class="mini-btn danger-btn" data-delete-app="${app.id}" type="button">Delete</button>
           `}
         </div>
       </div>
@@ -1606,9 +1605,9 @@ function renderAll() {
   if (document.getElementById("screen-home")?.classList.contains("active")) {
     document.getElementById("mobileTitle").textContent = {
       rm: "RM Workspace",
-      manager: "Manager Tower",
-      admin: "Admin & Policy",
-      customer: "Customer Tracking",
+      manager: "Branch Review",
+      admin: "Admin Controls",
+      customer: "Application Status",
     }[state.user?.role || "rm"];
   }
   renderMetrics();

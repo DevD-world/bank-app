@@ -161,12 +161,12 @@ let selectedApplicationId = state.applications[0]?.id;
 let activeFilter = "all";
 
 const views = {
-  command: "Application Command Center",
+  command: "Application Desk",
   rm: "Relationship Manager Copilot",
   followups: "Follow-Up Center",
   scanner: "AI Document Scanner",
-  manager: "Manager Control Tower",
-  analytics: "Revenue Leakage Analytics",
+  manager: "Branch Review",
+  analytics: "Portfolio Risk",
   admin: "Rules Admin",
   integrations: "Integrations"
 };
